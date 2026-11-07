@@ -174,25 +174,44 @@ local function AddKey(idx, words, name)
     list[#list + 1] = { words = words, name = name }
 end
 
--- Word lists for every known name, keyed by first word. A two-word name like
--- "Hamuul Runetotem" also matches "Hamuul" or "Runetotem" alone, as long as no
--- other name shares that word and it isn't a title like "Lord".
+-- A word that identifies someone on its own: capitalised, not tiny, not a title.
+local function Distinctive(w)
+    return #w >= 4 and not TITLES[w] and w:find("^%u") ~= nil
+end
+
+-- Word lists for every known name, keyed by first word. A longer name also matches
+-- any run of its words containing a distinctive one, so "Arch Druid Hamuul Runetotem"
+-- matches "Hamuul", "Runetotem" or "Hamuul Runetotem", as long as no other name
+-- shares that short form.
 function Names.Index()
     if index and not dirty then return index end
     local db = ns.db
     local fromJournal = LoadJournal()
-    local idx, short = {}, {}
+    local idx, short = {}, {}  -- short[key] = { words, owners = { [name] = true } }
 
     local function Consider(name)
         if db.ignoredNames[name] then return end
         local words = Words(name)
         if #words == 0 then return end
         AddKey(idx, words, name)
-        if #words >= 2 then
-            for _, w in ipairs({ words[1], words[#words] }) do
-                if #w >= 4 and not TITLES[w] and w:find("^%u") then
-                    short[w] = short[w] or {}
-                    short[w][name] = true
+        local n = math.min(#words, 6)
+        for i = 1, n do
+            for j = i, n do
+                if not (i == 1 and j == #words) then
+                    local part, useful = {}, false
+                    for k = i, j do
+                        part[#part + 1] = words[k]
+                        if Distinctive(words[k]) then useful = true end
+                    end
+                    if useful then
+                        local key = table.concat(part, " ")
+                        local s = short[key]
+                        if not s then
+                            s = { words = part, owners = {} }
+                            short[key] = s
+                        end
+                        s.owners[name] = true
+                    end
                 end
             end
         end
@@ -203,13 +222,13 @@ function Names.Index()
         if not db.names[name] then Consider(name) end
     end
 
-    for w, owners in pairs(short) do
+    for key, s in pairs(short) do
         local only, count = nil, 0
-        for name in pairs(owners) do
+        for name in pairs(s.owners) do
             only, count = name, count + 1
         end
-        if count == 1 and not db.names[w] and not fromJournal[w] then
-            AddKey(idx, { w }, only)
+        if count == 1 and not db.names[key] and not fromJournal[key] then
+            AddKey(idx, s.words, only)
         end
     end
 

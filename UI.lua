@@ -817,6 +817,12 @@ function UI.Refresh()
     local unread = ns:CountUnread()
     frame.titleText:SetText(unread > 0 and L.TITLE_UNREAD:format(unread) or L.TITLE)
     frame.untitled:SetChecked(ns.db.settings.showUntitled)
+    -- Only show the controls that do something in this view.
+    local quests = state.view == "quest" or state.view == "all"
+    frame.untitled:SetShown(quests)
+    frame.untitled.label:SetShown(quests)
+    frame.zoneDD:SetShown(state.view ~= "people")
+    frame.charDD:SetShown(state.view ~= "people")
     for _, dd in ipairs(frame.dropdowns) do dd:GenerateMenu() end
     UI.RenderReader(false)
 end
@@ -1043,7 +1049,9 @@ local function Build()
     local untitledLabel = Text(f, "GameFontHighlightSmall", INK)
     untitledLabel:SetPoint("LEFT", untitled, "RIGHT", 0, 0)
     untitledLabel:SetText(L.SHOW_UNTITLED)
+    untitled.label = untitledLabel
     f.untitled = untitled
+    f.zoneDD, f.charDD = zoneDD, charDD
 
     -- List
     local list = CreateFrame("Frame", nil, f, "WowScrollBoxList")
