@@ -87,3 +87,7 @@ It's a plain Lua table. Back it up, or read it with your own tools outside the g
 
 - Lorescribe only listens to game events. It doesn't touch combat or protected frames.
 - If a capture ever fails, the error is recorded instead of interrupting play. `/ls errors` shows them, which is useful for bug reports.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
