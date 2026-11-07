@@ -2,7 +2,7 @@
 ## Title: Lorescribe
 ## Notes: Saves quest text, books and NPC dialogue as you play so you can read them later.
 ## Author: EvilDrPorkChop
-## Version: 0.2.0
+## Version: 0.2.1
 ## Category: Quests
 ## SavedVariables: LorescribeDB
 ## SavedVariablesPerCharacter: LorescribeCharDB
