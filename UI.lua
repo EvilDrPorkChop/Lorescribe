@@ -1045,3 +1045,75 @@ function UI.ExportCurrent()
     end
     UI.ShowExport(texts)
 end
+
+------------------------------------------------------------------------------
+-- Minimap button
+------------------------------------------------------------------------------
+
+local minimapButton
+
+local function PlaceMinimapButton()
+    local angle = math.rad(ns.db.settings.minimapAngle or 215)
+    local radius = (Minimap:GetWidth() / 2) + 10
+    minimapButton:ClearAllPoints()
+    minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+local function DragMinimapButton()
+    local mx, my = Minimap:GetCenter()
+    local px, py = GetCursorPosition()
+    local scale = Minimap:GetEffectiveScale()
+    ns.db.settings.minimapAngle = math.deg(math.atan2(py / scale - my, px / scale - mx))
+    PlaceMinimapButton()
+end
+
+local function BuildMinimapButton()
+    local b = CreateFrame("Button", "LorescribeMinimapButton", Minimap)
+    minimapButton = b
+    b:SetSize(31, 31)
+    b:SetFrameStrata("MEDIUM")
+    b:SetFrameLevel(8)
+    b:RegisterForClicks("AnyUp")
+    b:RegisterForDrag("LeftButton")
+    b:SetHighlightTexture("Interface\Minimap\UI-Minimap-ZoomButton-Highlight")
+
+    local bg = b:CreateTexture(nil, "BACKGROUND")
+    bg:SetSize(20, 20)
+    bg:SetTexture("Interface\Minimap\UI-Minimap-Background")
+    bg:SetPoint("TOPLEFT", 7, -5)
+    local icon = b:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(17, 17)
+    icon:SetTexture("Interface\Icons\INV_Misc_Book_09")
+    icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+    icon:SetPoint("TOPLEFT", 7, -6)
+    local border = b:CreateTexture(nil, "OVERLAY")
+    border:SetSize(53, 53)
+    border:SetTexture("Interface\Minimap\MiniMap-TrackingBorder")
+    border:SetPoint("TOPLEFT")
+
+    b:SetScript("OnClick", function() ns.Safe(UI.Toggle) end)
+    b:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", function() ns.Safe(DragMinimapButton) end)
+        GameTooltip:Hide()
+    end)
+    b:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText(L.TITLE)
+        GameTooltip:AddLine(L.MINIMAP_TIP, 1, 1, 1)
+        local unread = ns:CountUnread()
+        if unread > 0 then GameTooltip:AddLine(L.TITLE_UNREAD:format(unread), 0.8, 0.8, 0.8) end
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", GameTooltip_Hide)
+end
+
+function UI.UpdateMinimapButton()
+    if ns.db.settings.minimapHide then
+        if minimapButton then minimapButton:Hide() end
+        return
+    end
+    if not minimapButton then BuildMinimapButton() end
+    PlaceMinimapButton()
+    minimapButton:Show()
+end

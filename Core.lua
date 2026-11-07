@@ -2,7 +2,7 @@
 -- Core: saved data, capture, backfill and slash commands. The window lives in UI.lua.
 local ADDON, ns = ...
 
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.1.1"
 
 local DB_VERSION = 1
 local MAX_TITLE_TRIES = 3     -- sessions we ask the server for a completed quest's title
@@ -20,6 +20,9 @@ local L = {
     PAGINATE_OFF = "Books will only save the pages you turn to.",
     MARKREAD_ON = "Opening an entry now marks it read.",
     MARKREAD_OFF = "Opening an entry no longer marks it read.",
+    MINIMAP_ON = "Minimap button shown.",
+    MINIMAP_OFF = "Minimap button hidden. /ls minimap on brings it back.",
+    MINIMAP_TIP = "Left-click to open your library. Drag to move.",
     MINLENGTH = "Dialogue shorter than %d characters is skipped.",
     LINKBASE = "Quest links now start with %s",
     WINDOW_RESET = "window position and size reset.",
@@ -34,6 +37,7 @@ local L = {
         "/ls gossip on|off - NPC dialogue capture",
         "/ls paginate on|off - page through books automatically",
         "/ls markread on|off - mark entries read when opened",
+        "/ls minimap on|off - minimap button",
         "/ls minlength <n> - shortest dialogue worth saving",
         "/ls link <url> - base URL for quest links",
         "/ls reset window - put the window back in the middle",
@@ -132,6 +136,8 @@ local DEFAULTS = {
         fontSize = 13,
         markReadOnOpen = false,
         showUntitled = false,
+        minimapHide = false,
+        minimapAngle = 215,
     },
     quests = {},
     books = {},
@@ -776,6 +782,7 @@ H.ADDON_LOADED = function(name)
             pcall(events.RegisterEvent, events, event)
         end
     end
+    Safe(ns.UI.UpdateMinimapButton)
 end
 
 ------------------------------------------------------------------------------
@@ -829,6 +836,10 @@ local function HandleSlash(msg)
     elseif cmd == "markread" then
         s.markReadOnOpen = OnOff(arg, s.markReadOnOpen)
         Print(s.markReadOnOpen and L.MARKREAD_ON or L.MARKREAD_OFF)
+    elseif cmd == "minimap" then
+        s.minimapHide = not OnOff(arg, not s.minimapHide)
+        ns.UI.UpdateMinimapButton()
+        Print(s.minimapHide and L.MINIMAP_OFF or L.MINIMAP_ON)
     elseif cmd == "minlength" and tonumber(arg) then
         s.gossipMinLength = math.max(0, math.floor(tonumber(arg)))
         Print(L.MINLENGTH:format(s.gossipMinLength))
