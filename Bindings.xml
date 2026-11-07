@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="LORESCRIBE_TOGGLE" header="LORESCRIBE" category="ADDONS">
+		Lorescribe_Toggle()
+	</Binding>
+</Bindings>

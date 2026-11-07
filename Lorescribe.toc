@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: Lorescribe
+## Notes: Saves quest text, books and NPC dialogue as you play so you can read them later.
+## Author: EvilDrPorkChop
+## Version: 0.1.0
+## Category: Quests
+## SavedVariables: LorescribeDB
+## SavedVariablesPerCharacter: LorescribeCharDB
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## AddonCompartmentFunc: Lorescribe_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: Lorescribe_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: Lorescribe_OnAddonCompartmentLeave
+
+Core.lua
+UI.lua

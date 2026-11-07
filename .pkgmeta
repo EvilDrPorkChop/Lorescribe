@@ -1,0 +1,6 @@
+# Read by the BigWigs packager in .github/workflows/release.yml.
+package-as: Lorescribe
+
+ignore:
+  - tools
+  - Lorescribe_SPEC.md
