@@ -51,7 +51,7 @@ Open it with `/ls`, the book button on the minimap (drag it to move it), or a ke
 | `/ls gossip on\|off` | NPC dialogue capture |
 | `/ls paginate on\|off` | Page through books automatically |
 | `/ls markread on\|off` | Mark entries read when you open them |
-| `/ls minimap on\|off` | Show or hide the minimap button |
+| `/ls minimap on\|off\|reset` | Show, hide or move back the minimap button |
 | `/ls minlength <n>` | Shortest dialogue worth saving (default 40 characters) |
 | `/ls link <url>` | Base URL for quest links (default `https://www.wowhead.com/quest=`) |
 | `/ls reset window` | Put the window back in the middle of the screen |

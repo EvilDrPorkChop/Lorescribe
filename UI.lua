@@ -1053,7 +1053,7 @@ end
 local minimapButton
 
 local function PlaceMinimapButton()
-    local angle = math.rad(ns.db.settings.minimapAngle or 215)
+    local angle = math.rad(ns.db.settings.minimapAngle or 140)
     local radius = (Minimap:GetWidth() / 2) + 10
     minimapButton:ClearAllPoints()
     minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
@@ -1071,8 +1071,11 @@ local function BuildMinimapButton()
     local b = CreateFrame("Button", "LorescribeMinimapButton", Minimap)
     minimapButton = b
     b:SetSize(31, 31)
-    b:SetFrameStrata("MEDIUM")
-    b:SetFrameLevel(8)
+    -- Draw above the minimap itself, whatever strata and level this client gives it.
+    local strata = Minimap:GetFrameStrata()
+    local rank = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5 }
+    b:SetFrameStrata((rank[strata] or 0) > rank.MEDIUM and strata or "MEDIUM")
+    b:SetFrameLevel(Minimap:GetFrameLevel() + 10)
     b:RegisterForClicks("AnyUp")
     b:RegisterForDrag("LeftButton")
     b:SetHighlightTexture("Interface\Minimap\UI-Minimap-ZoomButton-Highlight")

@@ -2,9 +2,9 @@
 -- Core: saved data, capture, backfill and slash commands. The window lives in UI.lua.
 local ADDON, ns = ...
 
-ns.VERSION = "0.1.1"
+ns.VERSION = "0.1.2"
 
-local DB_VERSION = 1
+local DB_VERSION = 2
 local MAX_TITLE_TRIES = 3     -- sessions we ask the server for a completed quest's title
 local TITLES_PER_SECOND = 20  -- server title requests, spread over frames
 
@@ -37,7 +37,7 @@ local L = {
         "/ls gossip on|off - NPC dialogue capture",
         "/ls paginate on|off - page through books automatically",
         "/ls markread on|off - mark entries read when opened",
-        "/ls minimap on|off - minimap button",
+        "/ls minimap on|off|reset - minimap button",
         "/ls minlength <n> - shortest dialogue worth saving",
         "/ls link <url> - base URL for quest links",
         "/ls reset window - put the window back in the middle",
@@ -137,7 +137,7 @@ local DEFAULTS = {
         markReadOnOpen = false,
         showUntitled = false,
         minimapHide = false,
-        minimapAngle = 215,
+        minimapAngle = 140,
     },
     quests = {},
     books = {},
@@ -146,7 +146,12 @@ local DEFAULTS = {
 }
 
 -- Upgrades keyed by the version they produce: MIGRATIONS[2] turns a version 1 DB into 2.
-local MIGRATIONS = {}
+local MIGRATIONS = {
+    -- 0.1.1 put the minimap button where other addons' buttons usually sit.
+    [2] = function(db)
+        if db.settings.minimapAngle == 215 then db.settings.minimapAngle = 140 end
+    end,
+}
 
 ------------------------------------------------------------------------------
 -- Helpers
@@ -836,6 +841,10 @@ local function HandleSlash(msg)
     elseif cmd == "markread" then
         s.markReadOnOpen = OnOff(arg, s.markReadOnOpen)
         Print(s.markReadOnOpen and L.MARKREAD_ON or L.MARKREAD_OFF)
+    elseif cmd == "minimap" and arg == "reset" then
+        s.minimapAngle, s.minimapHide = 140, false
+        ns.UI.UpdateMinimapButton()
+        Print(L.MINIMAP_ON)
     elseif cmd == "minimap" then
         s.minimapHide = not OnOff(arg, not s.minimapHide)
         ns.UI.UpdateMinimapButton()
