@@ -2,9 +2,9 @@
 -- Core: saved data, capture, backfill and slash commands. The window lives in UI.lua.
 local ADDON, ns = ...
 
-ns.VERSION = "0.1.3"
+ns.VERSION = "0.2.0"
 
-local DB_VERSION = 2
+local DB_VERSION = 3
 local MAX_TITLE_TRIES = 3     -- sessions we ask the server for a completed quest's title
 local TITLES_PER_SECOND = 20  -- server title requests, spread over frames
 
@@ -38,6 +38,8 @@ local L = {
         "/ls paginate on|off - page through books automatically",
         "/ls markread on|off - mark entries read when opened",
         "/ls minimap on|off|reset - minimap button",
+        "/ls track <name> - follow a name under People",
+        "/ls untrack <name> - hide a name from People",
         "/ls minlength <n> - shortest dialogue worth saving",
         "/ls link <url> - base URL for quest links",
         "/ls reset window - put the window back in the middle",
@@ -50,6 +52,7 @@ local L = {
     VIEW_QUESTS = "Quests",
     VIEW_BOOKS = "Books",
     VIEW_DIALOGUE = "Dialogue",
+    VIEW_PEOPLE = "People",
     VIEW_STARRED = "Starred",
     VIEW_ALL = "All",
     KIND_quest = "Quest",
@@ -118,6 +121,24 @@ local L = {
     EXPORT_SELECT = "Select all",
     EXPORT_EMPTY = "Nothing to export.",
 
+    EMPTY_people = "No one yet.\n\nPeople appear here once something you've saved mentions them: quest givers, NPCs you talk to, bosses you fight, notable NPCs you target, and bosses listed in the Dungeon Journal.\n\nTo follow a name it hasn't picked up, type /ls track <name>.",
+    SOURCE_npc = "NPC",
+    SOURCE_target = "Seen",
+    SOURCE_boss = "Boss",
+    SOURCE_journal = "Dungeon Journal",
+    SOURCE_manual = "Tracked by you",
+    MENTIONS = "%d",
+    MENTIONED_IN = "Mentioned in %d entries",
+    MENTIONED_IN_ONE = "Mentioned in 1 entry",
+    NO_MENTIONS = "Nothing you've saved mentions this name yet.",
+    FIRST_SEEN = "First seen %s",
+    BACK_TO = "< Back to %s",
+    HIDE_NAME = "Hide",
+    HIDE_NAME_CONFIRM = "Hide \"%s\" from People? /ls track %s brings it back.",
+    TRACKED = "now tracking %s under People.",
+    UNTRACKED = "%s is hidden from People.",
+    TRACK_USAGE = "usage: /ls track <name>",
+
     COMPARTMENT_TIP = "Click to open your library.",
     BINDING_TOGGLE = "Open or close Lorescribe",
 }
@@ -143,6 +164,8 @@ local DEFAULTS = {
     books = {},
     gossip = {},
     ui = {},
+    names = {},         -- [name] = { source, zone, firstSeen }
+    ignoredNames = {},  -- [name] = true, hidden from People
 }
 
 -- Upgrades keyed by the version they produce: MIGRATIONS[2] turns a version 1 DB into 2.
@@ -150,6 +173,16 @@ local MIGRATIONS = {
     -- 0.1.1 put the minimap button where other addons' buttons usually sit.
     [2] = function(db)
         if db.settings.minimapAngle == 215 then db.settings.minimapAngle = 140 end
+    end,
+    -- 0.2.0 tracks people: start with the quest givers and NPCs already saved.
+    [3] = function(db)
+        local function Seed(name, zone, firstSeen)
+            if name and name ~= L.UNKNOWN_NPC and not db.names[name] then
+                db.names[name] = { source = "npc", zone = zone, firstSeen = firstSeen }
+            end
+        end
+        for _, q in pairs(db.quests) do Seed(q.giver, q.zone, q.firstSeen) end
+        for _, g in pairs(db.gossip) do Seed(g.npc, g.zone, g.firstSeen) end
     end,
 }
 
@@ -176,6 +209,7 @@ ns.Safe = Safe
 local function IsSecret(v)
     return issecretvalue ~= nil and issecretvalue(v) and true or false
 end
+ns.IsSecret = IsSecret
 
 -- A usable piece of text, or nil. WoW Forever can return "secret" values, which error
 -- when concatenated, compared or used as table keys, so they count as nothing.
@@ -213,10 +247,6 @@ local function CharKey()
 end
 ns.CharKey = CharKey
 
-local function NpcName()
-    return Clean((UnitName("npc")))
-end
-
 local function GetLocation()
     local mapID = C_Map.GetBestMapForUnit("player")
     if IsSecret(mapID) then mapID = nil end
@@ -232,6 +262,14 @@ local function GetLocation()
     end
     zone = zone or Clean(GetRealZoneText())
     return zone, mapID, x, y
+end
+ns.GetLocation = GetLocation
+
+-- The NPC you're dealing with (quest giver, gossip). Also remembered under People.
+local function NpcName()
+    local name = Clean((UnitName("npc")))
+    if name and ns.Names then ns.Names.Add(name, "npc", (GetLocation())) end
+    return name
 end
 
 local function CopyDefaults(dst, src)
@@ -389,7 +427,8 @@ function H.QUEST_PROGRESS()
     if not id or id == 0 then return end
     local q = GetQuestRecord(id)
     SetMeta(q, "title", GetTitleText())
-    if not q.giver then SetMeta(q, "giver", NpcName()) end
+    local npc = NpcName()
+    if not q.giver then SetMeta(q, "giver", npc) end
     ApplyText(q, { progress = GetProgressText() }, "live")
     StampLocation(q)
     ns:Changed()
@@ -400,7 +439,8 @@ function H.QUEST_COMPLETE()
     if not id or id == 0 then return end
     local q = GetQuestRecord(id)
     SetMeta(q, "title", GetTitleText())
-    if not q.giver then SetMeta(q, "giver", NpcName()) end
+    local npc = NpcName()
+    if not q.giver then SetMeta(q, "giver", npc) end
     ApplyText(q, { completion = GetRewardText() }, "live")
     StampLocation(q)
     ns:Changed()
@@ -841,6 +881,16 @@ local function HandleSlash(msg)
     elseif cmd == "markread" then
         s.markReadOnOpen = OnOff(arg, s.markReadOnOpen)
         Print(s.markReadOnOpen and L.MARKREAD_ON or L.MARKREAD_OFF)
+    elseif cmd == "track" or cmd == "untrack" then
+        if rest == "" then
+            Print(L.TRACK_USAGE)
+        elseif cmd == "track" then
+            local name = ns.Names.Track(rest)
+            if name then Print(L.TRACKED:format(name)) end
+        else
+            ns.Names.Hide(rest)
+            Print(L.UNTRACKED:format(rest))
+        end
     elseif cmd == "minimap" and arg == "reset" then
         s.minimapAngle, s.minimapHide = 140, false
         ns.UI.UpdateMinimapButton()

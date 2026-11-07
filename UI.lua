@@ -21,6 +21,7 @@ local VIEWS = {
     { key = "quest", label = L.VIEW_QUESTS },
     { key = "book", label = L.VIEW_BOOKS },
     { key = "gossip", label = L.VIEW_DIALOGUE },
+    { key = "people", label = L.VIEW_PEOPLE },
     { key = "starred", label = L.VIEW_STARRED },
     { key = "all", label = L.VIEW_ALL },
 }
@@ -33,7 +34,9 @@ local SORTS = {
 
 local state = { view = "readlater", search = "", zone = nil, char = nil, sort = "newest" }
 local current   -- the entry shown in the reader
+local backTo    -- the person whose page the current entry was opened from
 local frame     -- main window, built on first use
+local BuildPeople, NameEntry  -- defined with the People view below
 
 ------------------------------------------------------------------------------
 -- Text
@@ -159,25 +162,38 @@ local function NewEntry(kind, key, rec, title, zone)
     }
 end
 
+-- The list entry for one saved record, or nil if it's gone.
+local function EntryFor(kind, key)
+    local db = ns.db
+    if kind == "quest" then
+        local q = db.quests[key]
+        return q and NewEntry("quest", key, q, q.title or L.UNTITLED_QUEST:format(key), q.zone)
+    elseif kind == "book" then
+        local b = db.books[key]
+        local loc = b and b.locations and b.locations[1]
+        return b and NewEntry("book", key, b, b.title or L.UNTITLED_BOOK, loc and loc.zone)
+    elseif kind == "gossip" then
+        local g = db.gossip[key]
+        return g and NewEntry("gossip", key, g, g.npc or L.UNKNOWN_NPC, g.zone)
+    end
+end
+
+local function AllEntries()
+    local db, all = ns.db, {}
+    local showUntitled = db.settings.showUntitled
+    for id, q in pairs(db.quests) do
+        if q.title or showUntitled then all[#all + 1] = EntryFor("quest", id) end
+    end
+    for key in pairs(db.books) do all[#all + 1] = EntryFor("book", key) end
+    for key in pairs(db.gossip) do all[#all + 1] = EntryFor("gossip", key) end
+    return all
+end
+
 -- Everything matching the current view, filters and search, sorted.
 -- Also refreshes the zone and character lists the filters offer.
 function UI.BuildEntries()
-    local db = ns.db
-    local showUntitled = db.settings.showUntitled
-    local all = {}
-
-    for id, q in pairs(db.quests) do
-        if q.title or showUntitled then
-            all[#all + 1] = NewEntry("quest", id, q, q.title or L.UNTITLED_QUEST:format(id), q.zone)
-        end
-    end
-    for key, b in pairs(db.books) do
-        local loc = b.locations and b.locations[1]
-        all[#all + 1] = NewEntry("book", key, b, b.title or L.UNTITLED_BOOK, loc and loc.zone)
-    end
-    for key, g in pairs(db.gossip) do
-        all[#all + 1] = NewEntry("gossip", key, g, g.npc or L.UNKNOWN_NPC, g.zone)
-    end
+    if state.view == "people" then return BuildPeople() end
+    local all = AllEntries()
 
     local search = state.search:lower()
     if search == "" then search = nil end
@@ -206,6 +222,7 @@ function UI.BuildEntries()
 end
 
 local function StillExists(e)
+    if e.kind == "name" then return ns.Names.Info(e.key) ~= nil end
     return ns.db[KIND_TABLE[e.kind]][e.key] == e.rec
 end
 
@@ -215,7 +232,13 @@ function UI.EntryText(e)
     local function add(s) if s then out[#out + 1] = s end end
 
     add("== " .. e.title .. " ==")
-    if e.kind == "quest" then
+    if e.kind == "name" then
+        local m = UI.Mentions()[e.key]
+        for _, hit in ipairs(m and m.hits or {}) do
+            add("- " .. hit.entry.title .. " (" .. L["KIND_" .. hit.entry.kind] .. ")")
+        end
+        return StripCodes(table.concat(out, "\n"))
+    elseif e.kind == "quest" then
         local meta = {}
         if r.giver then meta[#meta + 1] = L.FROM:format(r.giver) end
         if r.zone then meta[#meta + 1] = r.zone end
@@ -370,6 +393,12 @@ local function AddBody(text, gap)
     if len > 0 then AddBlock(table.concat(buf, "\n"), fonts.body, INK, g) end
 end
 
+-- Body text with known names made clickable. Falls back to plain text if matching fails.
+local function Linked(text)
+    local ok, out = pcall(ns.Names.Link, text)
+    return ok and out or text
+end
+
 local function AddLink(url)
     linkBox:ClearAllPoints()
     linkBox:SetPoint("TOPLEFT", content, "TOPLEFT", 10, -(cursorY + 10))
@@ -410,7 +439,7 @@ local function RenderQuest(e)
         if text then
             any = true
             AddBlock(s[2], fonts.heading, ACCENT, 16)
-            AddBody(Display(text))
+            AddBody(Linked(Display(text)))
         end
     end
     if not any then
@@ -444,7 +473,7 @@ local function RenderBook(e)
     for p = 1, last do
         if last > 1 then AddBlock(L.PAGE:format(p), fonts.heading, ACCENT, 16) end
         if r.pages[p] then
-            AddBody(Display(r.pages[p]), last > 1 and 6 or 16)
+            AddBody(Linked(Display(r.pages[p])), last > 1 and 6 or 16)
         else
             AddBlock(L.PAGE_MISSING:format(p), fonts.meta, MUTED, 6)
         end
@@ -459,15 +488,212 @@ local function RenderGossip(e)
         FormatCoords(r.x, r.y),
         r.firstSeen and L.CAPTURED:format(FormatDate(r.firstSeen)),
     }), fonts.meta, MUTED, 4)
-    AddBody(Display(r.text), 16)
+    AddBody(Linked(Display(r.text)), 16)
+end
+
+------------------------------------------------------------------------------
+-- People
+------------------------------------------------------------------------------
+
+local mentions  -- [name] = { count, hits = { { entry, text, s, e } } }; rebuilt after changes
+
+-- The texts of an entry as displayed, which is what names are matched against.
+local function EntryTexts(e)
+    local r, out = e.rec, {}
+    local function add(s) if s then out[#out + 1] = Display(s) end end
+    if e.kind == "quest" then
+        add(r.title)
+        add(r.giver)
+        for _, f in ipairs(ns.QUEST_TEXT_FIELDS) do add(r[f]) end
+    elseif e.kind == "book" then
+        add(r.title)
+        for p = 1, MaxPage(r.pages) do add(r.pages[p]) end
+    else
+        add(r.npc)
+        add(r.text)
+    end
+    return out
+end
+
+-- Which entries mention each known name, with where the first mention is.
+function UI.Mentions()
+    if mentions then return mentions end
+    local out = {}
+    for _, e in ipairs(AllEntries()) do
+        for _, text in ipairs(EntryTexts(e)) do
+            ns.Names.Scan(text, function(name, s, en)
+                local m = out[name]
+                if not m then
+                    m = { count = 0, hits = {}, seen = {} }
+                    out[name] = m
+                end
+                m.count = m.count + 1
+                if not m.seen[e.id] then
+                    m.seen[e.id] = true
+                    m.hits[#m.hits + 1] = { entry = e, text = text, s = s, e = en }
+                end
+            end)
+        end
+    end
+    mentions = out
+    return out
+end
+
+local function SourceLabel(info)
+    return L["SOURCE_" .. (info.source or "manual")]
+end
+
+NameEntry = function(name)
+    local info = ns.Names.Info(name) or { source = "manual" }
+    local m = UI.Mentions()[name]
+    local count = m and #m.hits or 0
+    return {
+        id = "name:" .. name, kind = "name", key = name, rec = info,
+        title = name, sortTitle = name:lower(), time = count,
+        zone = MetaLine({ SourceLabel(info), info.zone }),
+        label = L.MENTIONS:format(count),
+    }
+end
+
+-- Everyone mentioned in saved text, plus names tracked by hand. Newest-first sorting
+-- means most mentioned first here.
+BuildPeople = function()
+    local db, m = ns.db, UI.Mentions()
+    local search = state.search:lower()
+    if search == "" then search = nil end
+    local out, seen = {}, {}
+    local function Add(name)
+        if seen[name] or db.ignoredNames[name] then return end
+        seen[name] = true
+        if not search or name:lower():find(search, 1, true) then out[#out + 1] = NameEntry(name) end
+    end
+    for name in pairs(m) do Add(name) end
+    for name, info in pairs(db.names) do
+        if info.source == "manual" then Add(name) end
+    end
+    table.sort(out, SORTERS[state.sort] or SORTERS.newest)
+    return out
+end
+
+local function EntryLink(e)
+    return ns.Names.LINK_COLOR .. "|Hlorescribe:e:" .. e.kind .. ":" .. tostring(e.key) .. "|h"
+        .. Display(e.title) .. "|h|r"
+end
+
+-- The sentence around a mention, with the name picked out.
+local function Snippet(hit)
+    local text, s, e = hit.text, hit.s, hit.e
+    local function Stop(c) return c == "." or c == "!" or c == "?" or c == "\n" end
+    local from, cutBefore = s, false
+    for i = s - 1, 1, -1 do
+        if Stop(text:sub(i, i)) then break end
+        if s - i > 200 then
+            cutBefore = true
+            break
+        end
+        from = i
+    end
+    local to, cutAfter = e, false
+    for i = e + 1, #text do
+        to = i
+        if Stop(text:sub(i, i)) then break end
+        if i - e > 200 then
+            cutAfter = true
+            break
+        end
+    end
+    -- Don't end a cut part-way through a multi-byte character.
+    if cutBefore then
+        while from < s and text:byte(from) >= 128 and text:byte(from) < 192 do from = from + 1 end
+    end
+    if cutAfter then
+        while to > e and text:byte(to) >= 128 do to = to - 1 end
+    end
+    local before = text:sub(from, s - 1):gsub("^%s+", "")
+    local after = text:sub(e + 1, to):gsub("%s+$", "")
+    return (cutBefore and "..." or "") .. before .. "|cff7a1f05" .. text:sub(s, e) .. "|r"
+        .. after .. (cutAfter and "..." or "")
+end
+
+local function RenderName(e)
+    local name, info = e.key, e.rec
+    AddBlock(name, fonts.title, ACCENT)
+    AddBlock(MetaLine({
+        SourceLabel(info),
+        info.zone,
+        info.firstSeen and L.FIRST_SEEN:format(FormatDate(info.firstSeen)),
+    }), fonts.meta, MUTED, 4)
+
+    local m = UI.Mentions()[name]
+    if not m then
+        AddBlock(L.NO_MENTIONS, fonts.body, INK, 16)
+        return
+    end
+    AddBlock(#m.hits == 1 and L.MENTIONED_IN_ONE or L.MENTIONED_IN:format(#m.hits), fonts.meta, MUTED, 4)
+
+    -- Oldest first, so the mentions read in the order you came across them.
+    local hits = {}
+    for i, hit in ipairs(m.hits) do hits[i] = hit end
+    table.sort(hits, function(a, b)
+        if a.entry.time ~= b.entry.time then return a.entry.time < b.entry.time end
+        return a.entry.sortTitle < b.entry.sortTitle
+    end)
+    for i = 1, math.min(#hits, 100) do
+        local hit = hits[i]
+        AddBlock(EntryLink(hit.entry), fonts.heading, ACCENT, 16)
+        AddBlock(MetaLine({ L["KIND_" .. hit.entry.kind], hit.entry.zone }), fonts.meta, MUTED, 2)
+        AddBlock(Snippet(hit), fonts.body, INK, 4)
+    end
+end
+
+-- Opens a person's page in the People view.
+function UI.ShowName(name)
+    if not ns.Names.Info(name) then return end
+    state.view, state.search = "people", ""
+    backTo = nil
+    current = NameEntry(name)
+    if frame.search:GetText() ~= "" then frame.search:SetText("") end
+    UI.Refresh()
+    UI.RenderReader(true)
+end
+
+local function OnLink(link)
+    local name = link:match("^lorescribe:n:(.+)$")
+    if name then
+        UI.ShowName(name)
+        return
+    end
+    local kind, key = link:match("^lorescribe:e:(%a+):(.+)$")
+    if not kind then return end
+    if kind == "quest" then key = tonumber(key) end
+    local e = key and EntryFor(kind, key)
+    if not e then return end
+    if current and current.kind == "name" then backTo = current.key end
+    current = e
+    UI.RenderReader(true)
+end
+
+local function OnLinkEnter(owner, link)
+    local name = link:match("^lorescribe:n:(.+)$")
+    if not name then return end
+    local m = UI.Mentions()[name]
+    local count = m and #m.hits or 0
+    GameTooltip:SetOwner(owner, "ANCHOR_CURSOR")
+    GameTooltip:SetText(name)
+    GameTooltip:AddLine(count == 1 and L.MENTIONED_IN_ONE or L.MENTIONED_IN:format(count), 1, 1, 1)
+    GameTooltip:Show()
 end
 
 local function UpdateButtons()
     local f, r = frame, current and current.rec
-    local enabled = r ~= nil
+    local isName = current ~= nil and current.kind == "name"
+    local enabled = r ~= nil and not isName
     for _, b in ipairs(f.entryButtons) do b:SetEnabled(enabled) end
     f.noteBox:SetEnabled(enabled)
-    if not r then
+    -- On a person's page the only action is hiding them.
+    f.deleteBtn:SetEnabled(r ~= nil)
+    f.deleteBtn:SetText(isName and L.HIDE_NAME or L.DELETE)
+    if not enabled then
         f.readBtn:SetText(L.MARK_READ)
         f.starBtn:SetText(L.STAR)
         f.queueBtn:SetText(L.QUEUE_ADD)
@@ -484,9 +710,15 @@ function UI.RenderReader(resetScroll)
     UpdateFonts()
     ResetBlocks()
     linkBox:Hide()
+    if current and current.kind ~= "name" and backTo and ns.Names.Info(backTo) then
+        AddBlock(ns.Names.LinkFor(backTo, L.BACK_TO:format(backTo)), fonts.meta, MUTED)
+        cursorY = cursorY + 8
+    end
     if not current then
         AddBlock(L.READER_EMPTY_TITLE, fonts.title, ACCENT)
         AddBlock(L.READER_EMPTY_HELP, fonts.body, INK, 12)
+    elseif current.kind == "name" then
+        RenderName(current)
     elseif current.kind == "quest" then
         RenderQuest(current)
     elseif current.kind == "book" then
@@ -541,14 +773,15 @@ local function InitRow(row, e)
     row.entry = e
     row.title:SetText(Display(e.title))
     row.zone:SetText(e.zone or "")
-    row.kind:SetText(L["KIND_" .. e.kind])
+    row.kind:SetText(e.label or L["KIND_" .. e.kind])
     row.dot:SetShown(ns.InQueue(e.rec))
     row.sel:SetShown(current ~= nil and current.id == e.id)
 end
 
 function UI.Select(e)
     current = e
-    if e and ns.db.settings.markReadOnOpen and not e.rec.read then
+    backTo = nil
+    if e and e.kind ~= "name" and ns.db.settings.markReadOnOpen and not e.rec.read then
         e.rec.read = true
         ns:Changed()
     end
@@ -593,6 +826,7 @@ local function RefreshSoon()
 end
 
 ns.OnDataChanged = function()
+    mentions = nil
     if frame and frame:IsShown() then UI.Refresh() end
 end
 
@@ -640,6 +874,20 @@ local function DeleteEntry(e)
     if current == e then current = nil end
     ns:Changed()
 end
+
+StaticPopupDialogs["LORESCRIBE_HIDE_NAME"] = {
+    text = L.HIDE_NAME_CONFIRM,
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(_, name)
+        ns.Safe(ns.Names.Hide, name)
+        if current and current.kind == "name" and current.key == name then current = nil end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
 
 StaticPopupDialogs["LORESCRIBE_DELETE"] = {
     text = L.DELETE_CONFIRM,
@@ -719,7 +967,7 @@ local function Build()
     f.tabs = {}
     local prev
     for _, v in ipairs(VIEWS) do
-        local tab = Button(f, v.label, 88, function()
+        local tab = Button(f, v.label, 80, function()
             state.view = v.key
             UI.Refresh()
         end)
@@ -828,6 +1076,11 @@ local function Build()
     content = CreateFrame("Frame", nil, reader)
     content:SetSize(400, 10)
     reader:SetScrollChild(content)
+    -- Names and entry titles in the reader are links.
+    content:SetHyperlinksEnabled(true)
+    content:SetScript("OnHyperlinkClick", function(_, link) ns.Safe(OnLink, link) end)
+    content:SetScript("OnHyperlinkEnter", function(self, link) ns.Safe(OnLinkEnter, self, link) end)
+    content:SetScript("OnHyperlinkLeave", GameTooltip_Hide)
     reader:SetScript("OnSizeChanged", function()
         if f:IsShown() then ns.Safe(UI.RenderReader, false) end
     end)
@@ -876,7 +1129,12 @@ local function Build()
     end)
     f.copyBtn:SetPoint("LEFT", f.queueBtn, "RIGHT", 4, 0)
     f.deleteBtn = Button(f, L.DELETE, 64, function()
-        if current then StaticPopup_Show("LORESCRIBE_DELETE", current.title, nil, current) end
+        if not current then return end
+        if current.kind == "name" then
+            StaticPopup_Show("LORESCRIBE_HIDE_NAME", current.key, current.key, current.key)
+        else
+            StaticPopup_Show("LORESCRIBE_DELETE", current.title, nil, current)
+        end
     end)
     f.entryButtons = { f.readBtn, f.starBtn, f.queueBtn, f.copyBtn, f.deleteBtn }
 

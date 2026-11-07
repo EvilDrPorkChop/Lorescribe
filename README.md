@@ -32,12 +32,28 @@ Progress and completion text can't be recovered for quests already in your log; 
 
 Open it with `/ls`, the book button on the minimap (drag it to move it), or a key bound under Key Bindings > AddOns.
 
-- Tabs along the top: Read later, Quests, Books, Dialogue, Starred, All.
+- Tabs along the top: Read later, Quests, Books, Dialogue, People, Starred, All.
 - The search box looks through titles, zones, NPC names and the full text.
 - Filter by zone or character, and sort by date, zone or title.
 - Opening an entry doesn't mark it read. Use **Mark read** when you're done, or `/ls markread on` to have opening do it.
 - **Copy** opens the entry as plain text, ready for Ctrl+C. **Export** does the same for the whole list you're looking at.
 - A- and A+ change the reading text size.
+
+## People
+
+The People tab gathers every mention of a character across your quests, books and dialogue, so you can follow someone like Arugal from the first rumour to the final quest.
+
+Lorescribe learns names from:
+
+- quest givers and NPCs you talk to
+- named NPCs you target out of combat: friendly ones, plus hostile elites, rares and bosses (ordinary mobs are left out)
+- dungeon and raid bosses when the fight starts
+- every boss listed in the game's Dungeon Journal
+- names you add yourself with `/ls track <name>`
+
+Names are matched against everything you've saved, including text saved before you met them. A two-part name like "Hamuul Runetotem" also matches "Hamuul" or "Runetotem" alone, unless another name shares that word. Known names show as links in the reader: click one to see everywhere it's mentioned, then click an entry to read it in full.
+
+Someone only appears under People once something you've saved mentions them. If a name is wrong or not worth following, open it and click **Hide**.
 
 ## Commands
 
@@ -51,6 +67,8 @@ Open it with `/ls`, the book button on the minimap (drag it to move it), or a ke
 | `/ls gossip on\|off` | NPC dialogue capture |
 | `/ls paginate on\|off` | Page through books automatically |
 | `/ls markread on\|off` | Mark entries read when you open them |
+| `/ls track <name>` | Follow a name under People, or bring back a hidden one |
+| `/ls untrack <name>` | Hide a name from People |
 | `/ls minimap on\|off\|reset` | Show, hide or move back the minimap button |
 | `/ls minlength <n>` | Shortest dialogue worth saving (default 40 characters) |
 | `/ls link <url>` | Base URL for quest links (default `https://www.wowhead.com/quest=`) |
