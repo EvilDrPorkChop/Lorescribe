@@ -1071,27 +1071,25 @@ local function BuildMinimapButton()
     local b = CreateFrame("Button", "LorescribeMinimapButton", Minimap)
     minimapButton = b
     b:SetSize(31, 31)
-    -- Draw above the minimap itself, whatever strata and level this client gives it.
-    local strata = Minimap:GetFrameStrata()
-    local rank = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5 }
-    b:SetFrameStrata((rank[strata] or 0) > rank.MEDIUM and strata or "MEDIUM")
-    b:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+    b:SetFrameStrata("MEDIUM")
+    b:SetFrameLevel(8)
     b:RegisterForClicks("AnyUp")
     b:RegisterForDrag("LeftButton")
-    b:SetHighlightTexture("Interface\Minimap\UI-Minimap-ZoomButton-Highlight")
+    -- Same art and layout as most addons' minimap buttons (LibDBIcon), by file ID.
+    b:SetHighlightTexture(136477)  -- Interface\Minimap\UI-Minimap-ZoomButton-Highlight
 
     local bg = b:CreateTexture(nil, "BACKGROUND")
     bg:SetSize(20, 20)
-    bg:SetTexture("Interface\Minimap\UI-Minimap-Background")
+    bg:SetTexture(136467)  -- Interface\Minimap\UI-Minimap-Background
     bg:SetPoint("TOPLEFT", 7, -5)
     local icon = b:CreateTexture(nil, "ARTWORK")
     icon:SetSize(17, 17)
-    icon:SetTexture("Interface\Icons\INV_Misc_Book_09")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
     icon:SetPoint("TOPLEFT", 7, -6)
     local border = b:CreateTexture(nil, "OVERLAY")
     border:SetSize(53, 53)
-    border:SetTexture("Interface\Minimap\MiniMap-TrackingBorder")
+    border:SetTexture(136430)  -- Interface\Minimap\MiniMap-TrackingBorder
     border:SetPoint("TOPLEFT")
 
     b:SetScript("OnClick", function() ns.Safe(UI.Toggle) end)

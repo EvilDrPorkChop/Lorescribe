@@ -2,7 +2,7 @@
 -- Core: saved data, capture, backfill and slash commands. The window lives in UI.lua.
 local ADDON, ns = ...
 
-ns.VERSION = "0.1.2"
+ns.VERSION = "0.1.3"
 
 local DB_VERSION = 2
 local MAX_TITLE_TRIES = 3     -- sessions we ask the server for a completed quest's title
